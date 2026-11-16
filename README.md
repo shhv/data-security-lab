@@ -14,13 +14,49 @@ A local, synthetic-data lab for learning **Data Security Posture Management** an
 
 Both depend on **classification**, so you can't protect data until you know what it is.
 
-## Quickstart
+## Setup and rebuilding the lab
 
+Generated data is **not** committed. Everything under `lab_data/` is rebuilt from code, so a
+fresh clone has none of it until you run the steps below.
+
+### 1. First-time setup (once per clone)
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m datagen --out lab_data --seed 42
-.venv/bin/pytest -q
+git clone <repo-url> data-security-lab && cd data-security-lab
+python3 -m venv .venv                       # Python 3.11+
+.venv/bin/pip install -e ".[dev]"           # add ,llm for the optional hosted-LLM backend
 ```
+
+### 2. Build the lab data
+```bash
+.venv/bin/python -m datagen                 # fake storage tree, permissions, manifest, eval set
+.venv/bin/python -m sqllab.load             # SQLite practice DBs (needs step 2's output)
+```
+Run them in this order. **`datagen` wipes `lab_data/` first**, deleting the databases too, so
+always run `sqllab.load` again after it.
+
+### 3. Check it worked
+```bash
+.venv/bin/pytest -q                         # all tests should pass
+.venv/bin/python -m dspm.compare_levels     # classifier comparison table
+sqlite3 -init .sqliterc.lab lab_data/lab.db "SELECT COUNT(*) FROM files;"   # 17
+```
+
+### What gets generated
+
+| Path | Made by | What it is |
+|---|---|---|
+| `lab_data/storage/acmeprodstorage/` | `datagen` | 17 fake files across 7 containers |
+| `lab_data/permissions.json` | `datagen` | users, guests, nested groups, ACLs |
+| `lab_data/manifest.json` | `datagen` | answer key: what was planted in each file |
+| `lab_data/eval/snippets.jsonl`, `labels.jsonl` | `datagen` | 200 labeled snippets for classifier evaluation |
+| `lab_data/lab.db` | `sqllab.load` | SQL practice: the storage lab as tables |
+| `lab_data/iam.db` | `sqllab.load` | SQL practice: IAM audit scenario (~6k sign-ins) |
+
+### Options and resets
+- **Different data, same layout:** `python -m datagen --seed 7`. The same seed always gives identical data.
+- **Other folder:** `python -m datagen --out my_lab`, then `python -m sqllab.load my_lab`.
+- **Reset after editing files or breaking a database:** rerun step 2.
+- **Never commit `lab_data/` or `.env`.** Both are in `.gitignore`.
 
 ## Stage 1: the synthetic estate (`datagen/`)
 

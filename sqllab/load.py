@@ -63,4 +63,11 @@ def load(lab: Path) -> Path:
 
 if __name__ == "__main__":
     import sys
-    print(f"wrote {load(Path(sys.argv[1] if len(sys.argv) > 1 else 'lab_data'))}")
+
+    from .scenarios import iam
+
+    lab = Path(sys.argv[1] if len(sys.argv) > 1 else "lab_data")
+    if not (lab / "permissions.json").exists():
+        sys.exit(f"{lab}/permissions.json not found - run `python -m datagen` first")
+    print(f"wrote {load(lab)}")
+    print(f"wrote {iam.build(lab / 'iam.db')}   (IAM audit scenario)")
