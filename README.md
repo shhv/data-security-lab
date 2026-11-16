@@ -58,6 +58,95 @@ sqlite3 -init .sqliterc.lab lab_data/lab.db "SELECT COUNT(*) FROM files;"   # 17
 - **Reset after editing files or breaking a database:** rerun step 2.
 - **Never commit `lab_data/` or `.env`.** Both are in `.gitignore`.
 
+## Command reference
+
+Run everything from the repo root:
+`cd /Users/shhv/Documents/DuoStuff/data-security-stuff`
+
+### SQL practice (SQLite console)
+`sqlite3` ships with macOS, so there's nothing to install. Build the databases first (step 2 above).
+
+```bash
+sqlite3 -init .sqliterc.lab lab_data/lab.db     # storage lab: users, groups, files, grants
+sqlite3 -init .sqliterc.lab lab_data/iam.db     # IAM audit: employees, apps, sign_ins, ...
+```
+`-init .sqliterc.lab` turns on column headers and aligned output. Without it, results are hard to read.
+
+Inside the console (you'll see a `sqlite>` prompt):
+
+| Type | What it does |
+|---|---|
+| `.tables` | list tables |
+| `.schema users` | show a table's columns and keys |
+| `SELECT * FROM users LIMIT 5;` | look at some rows. **SQL must end with `;`** |
+| `.mode line` / `.mode column` | one column per line (wide tables) / back to a table layout |
+| `.read docs/sql_answers.sql` | run a whole SQL file |
+| `.quit` (or Ctrl-D) | exit |
+
+If you're stuck at a `...>` prompt, you forgot the `;`. Type `;` and press Enter.
+
+Run a single query without opening the console:
+```bash
+sqlite3 -header -column lab_data/lab.db "SELECT id, type FROM users WHERE type = 'guest';"
+```
+
+Study material:
+
+| File | What it is |
+|---|---|
+| `docs/SQL_STUDY_PLAN.md` | 6-week plan, each week tied to a security question |
+| `docs/SQL_EXERCISES.md` | 30 exercises (easy / medium / hard) with expected row counts |
+| `docs/sql_answers.sql` | answers. Try the exercise first! |
+| `docs/sql_cheatsheet.html` | printable "when to use what" + live-debug playbook. Run `open docs/sql_cheatsheet.html`, then ⌘P |
+
+### Classifiers (find sensitive data)
+```bash
+.venv/bin/python -m dspm.classify --text "SSN: 912-34-5678"             # classify a string
+.venv/bin/python -m dspm.classify my_test.txt                           # a file
+.venv/bin/python -m dspm.classify lab_data/storage                      # a whole folder
+.venv/bin/python -m dspm.classify my_test.txt --classifier regex-only   # pick a layer
+.venv/bin/python -m dspm.compare_levels                                 # all 3 layers vs the answer key
+.venv/bin/python -m dspm.compare_levels --production-ssn-rules          # real-world SSN rules
+```
+Classifiers: `regex-only`, `regex-checksum`, `regex-context` (`regex` is the default and means `regex-context`).
+Use only fake values when testing: SSNs starting with 9, card `4111 1111 1111 1111`, emails ending in `.example`.
+
+### Evaluation (labeled snippet set)
+```bash
+.venv/bin/python -m eval.score                                   # precision/recall per type and category
+.venv/bin/python -m eval.score --show fp                         # list false positives
+.venv/bin/python -m eval.score --show fn --category obfuscated   # misses in one category
+.venv/bin/python -m eval.score --classifier regex-only
+```
+Categories: `clean`, `formatted`, `fp_bait`, `context`, `no_pattern`, `obfuscated`, `non_english`.
+
+### Tests
+```bash
+.venv/bin/pytest -q                              # everything
+.venv/bin/pytest tests/test_classifiers.py -v    # false-positive gallery, one line per lesson
+```
+
+### Look at the generated data
+```bash
+find lab_data/storage -type f                                                  # list fake files
+cat lab_data/storage/acmeprodstorage/shared-drive/u08/debug_notes.txt         # read one
+python3 -m json.tool lab_data/manifest.json | less                           # answer key
+```
+
+### Local LLM (Stage 6, in progress)
+```bash
+ollama serve                 # start the server (leave running, or open the Ollama app)
+ollama list                  # installed models (llama3.2, phi3)
+```
+The LLM classifier isn't built yet. Regex stays the default and the lab works without any LLM.
+
+### Git: save to both GitHub accounts
+```bash
+git add -A && git commit -m "what I changed"
+git push origin main     # work account  (shhv_cisco)
+git push self main       # personal      (shhv)
+```
+
 ## Stage 1: the synthetic estate (`datagen/`)
 
 ```
