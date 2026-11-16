@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Field Cheat Sheet</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#555; --rule:#ccc; --head:#f1f1f1; --accent:#0b5cad; --warn:#a33; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: #fff; color: var(--ink);
+         font: 10.5px/1.35 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 10px; }
+  h2 { font-size: 12px; margin: 10px 0 4px; padding: 2px 6px; background: var(--ink); color: #fff;
+       break-after: avoid; }
+  .cols { max-width: 960px; margin: 0 auto; }
+  section { margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; margin: 2px 0 4px; table-layout: auto; }
+  thead { display: table-header-group; }          /* repeat header row on each printed page */
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  th, td { border: 1px solid var(--rule); padding: 2px 4px; text-align: left; vertical-align: top; }
+  th { background: var(--head); }
+  code, pre { font: 9.5px/1.3 ui-monospace, Menlo, Consolas, monospace; }
+  code { overflow-wrap: anywhere; }
+  pre { margin: 2px 0 4px; padding: 4px 6px; background: var(--head); white-space: pre-wrap;
+        overflow-wrap: anywhere; }
+  ol, ul { margin: 2px 0 4px; padding-left: 16px; }
+  li { margin: 1px 0; break-inside: avoid; }
+  .warn { color: var(--warn); font-weight: 600; }
+  .k { color: var(--accent); font-weight: 600; }
+  @media print {
+    @page { size: letter; margin: 12mm; }
+    body { padding: 0; font-size: 10px; }
+    .cols { max-width: none; }
+    h2 { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    th, pre { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<h1>SQL Field Cheat Sheet: when to use what</h1>
+<p class="sub">For learning fast and for live debugging on customer calls. Read-only first, always.</p>
+<div class="cols">
+
+<section>
+<h2>1 · "I need to…" → use this</h2>
+<table>
+<thead><tr><th>I need to…</th><th>Use</th></tr></thead>
+<tr><td>See what a table looks like</td><td><code>SELECT * FROM t LIMIT 5</code></td></tr>
+<tr><td>Keep only some rows</td><td><code>WHERE</code></td></tr>
+<tr><td>One number per category (count, sum)</td><td><code>GROUP BY</code> + <code>COUNT/SUM</code></td></tr>
+<tr><td>Filter on that number (e.g. &gt; 5)</td><td><code>HAVING</code> (not WHERE)</td></tr>
+<tr><td>Find duplicates</td><td><code>GROUP BY key HAVING COUNT(*) &gt; 1</code></td></tr>
+<tr><td>Rows that match in both tables</td><td><code>JOIN</code> (inner)</td></tr>
+<tr><td>All rows from A, even with no match</td><td><code>LEFT JOIN</code></td></tr>
+<tr><td>Rows in A with <b>no</b> match in B (orphans)</td><td><code>LEFT JOIN … WHERE b.id IS NULL</code> or <code>NOT EXISTS</code></td></tr>
+<tr><td>"Is it in that other list?"</td><td><code>EXISTS (subquery)</code> / <code>IN (subquery)</code></td></tr>
+<tr><td>Unique values</td><td><code>DISTINCT</code></td></tr>
+<tr><td>Top N overall</td><td><code>ORDER BY … DESC LIMIT N</code></td></tr>
+<tr><td>Top N / latest row <b>per user</b></td><td><code>ROW_NUMBER() OVER (PARTITION BY user ORDER BY ts DESC)</code> then <code>= 1</code></td></tr>
+<tr><td>Compare a row with the previous one</td><td><code>LAG(col) OVER (PARTITION BY … ORDER BY ts)</code></td></tr>
+<tr><td>Running total / count in a time window</td><td><code>SUM/COUNT(*) OVER (… ROWS/RANGE …)</code></td></tr>
+<tr><td>If/else labels or buckets</td><td><code>CASE WHEN … THEN … ELSE … END</code></td></tr>
+<tr><td>Count rows matching a condition</td><td><code>SUM(CASE WHEN cond THEN 1 ELSE 0 END)</code></td></tr>
+<tr><td>Replace NULL with a default</td><td><code>COALESCE(col, 'none')</code></td></tr>
+<tr><td>Break a big query into steps</td><td><code>WITH step1 AS (…), step2 AS (…)</code></td></tr>
+<tr><td>Walk a hierarchy (nested groups, managers)</td><td><code>WITH RECURSIVE</code></td></tr>
+<tr><td>Stack two result sets</td><td><code>UNION ALL</code> (keeps dups) / <code>UNION</code> (removes)</td></tr>
+<tr><td>Group by day / hour</td><td><code>date(ts)</code>, <code>strftime('%H', ts)</code> (SQLite)</td></tr>
+<tr><td>Partial text match</td><td><code>LIKE '%x%'</code>; case-insensitive: <code>lower(col) LIKE</code></td></tr>
+</table>
+</section>
+
+<section>
+<h2>2 · How SQL actually runs (order)</h2>
+<pre>FROM / JOIN → WHERE → GROUP BY → HAVING → SELECT → DISTINCT → ORDER BY → LIMIT</pre>
+<ul>
+<li>That's why a <code>SELECT</code> alias can't be used in <code>WHERE</code>: WHERE runs first. Repeat the expression or wrap it in a CTE.</li>
+<li>Window functions run at the SELECT step. To filter on them, wrap in a CTE, then use <code>WHERE rn = 1</code>.</li>
+</ul>
+</section>
+
+<section>
+<h2>3 · Live-debug playbook (customer call)</h2>
+<ol>
+<li><span class="k">Orient.</span> List tables, describe the 1–2 that matter (dialect table below). Ask: "what's one row in this table?"</li>
+<li><span class="k">Sample.</span> <code>SELECT * … LIMIT 5</code>. Look at real values, NULLs, date formats and time zones.</li>
+<li><span class="k">Count.</span> <code>SELECT COUNT(*)</code>, then add filters <b>one at a time</b>. The filter where the count changes unexpectedly is your bug.</li>
+<li><span class="k">Isolate.</span> Pick one specific user or id the customer mentions and follow it through every table.</li>
+<li><span class="k">Check joins.</span> Count rows before and after each join. If the count grows, the join is duplicating rows (one-to-many).</li>
+<li><span class="k">Check NULLs and types.</span> <code>WHERE col IS NULL</code>; text vs number; <code>'2026-1-5'</code> vs <code>'2026-01-05'</code>.</li>
+<li><span class="k">State the answer as a query.</span> Read it back: "this shows X users who did Y since Z." Save it.</li>
+</ol>
+<p class="warn">Safety on a live system</p>
+<ul>
+<li>Use a <b>read-only</b> account or replica when possible. Start every query with <code>SELECT</code>.</li>
+<li>Always add <code>LIMIT</code> (or <code>TOP</code>) while exploring big tables.</li>
+<li>Before any <code>UPDATE</code>/<code>DELETE</code>: run the same <code>WHERE</code> as a <code>SELECT COUNT(*)</code> first, and wrap it in <code>BEGIN; … ROLLBACK;</code> until it's verified.</li>
+<li><span class="warn">Never</span> run <code>UPDATE</code>/<code>DELETE</code> without <code>WHERE</code>.</li>
+<li>Screen-sharing? Select only the columns you need, and don't show raw PII (SSNs, emails). Count or mask instead.</li>
+<li>Slow query? <code>EXPLAIN</code> it before rerunning. Check for a missing index on the WHERE or JOIN column.</li>
+</ul>
+</section>
+
+<section>
+<h2>4 · Gotchas that cause wrong answers</h2>
+<table>
+<thead><tr><th>Symptom</th><th>Cause / fix</th></tr></thead>
+<tr><td><code>WHERE x = NULL</code> returns nothing</td><td>Use <code>IS NULL</code>. NULL never equals anything, not even NULL.</td></tr>
+<tr><td><code>NOT IN (subquery)</code> returns nothing</td><td>Subquery contains a NULL. Use <code>NOT EXISTS</code>.</td></tr>
+<tr><td>LEFT JOIN acts like an inner join</td><td>A WHERE condition on the right table drops NULL rows. Move it into <code>ON</code>.</td></tr>
+<tr><td>Totals too big after a join</td><td>Join fan-out. Aggregate in a CTE first, then join.</td></tr>
+<tr><td><code>COUNT(col)</code> &lt; <code>COUNT(*)</code></td><td><code>COUNT(col)</code> skips NULLs. Choose on purpose.</td></tr>
+<tr><td>Ratio shows 0</td><td>Integer division. Use <code>1.0 * a / b</code>.</td></tr>
+<tr><td>Dates sort or compare oddly</td><td>Text dates must be <code>YYYY-MM-DD</code>. Watch time zones (UTC vs local).</td></tr>
+<tr><td>Missing groups with zero rows</td><td>Inner join drops them. LEFT JOIN from the full list, then <code>COALESCE(COUNT…,0)</code>.</td></tr>
+<tr><td><code>DISTINCT</code> "fixes" duplicates</td><td>It hides a bad join. Find out why rows duplicated.</td></tr>
+<tr><td>Off by one day</td><td><code>ts &lt; '2026-11-14'</code> excludes that whole day. Prefer <code>&lt; next day</code>.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5 · Same thing, different database</h2>
+<table>
+<thead><tr><th></th><th>SQLite</th><th>Postgres</th><th>MySQL</th><th>SQL Server</th></tr></thead>
+<tr><td>List tables</td><td><code>.tables</code></td><td><code>\dt</code></td><td><code>SHOW TABLES;</code></td><td><code>SELECT name FROM sys.tables;</code></td></tr>
+<tr><td>Describe</td><td><code>.schema t</code></td><td><code>\d t</code></td><td><code>DESCRIBE t;</code></td><td><code>EXEC sp_help 't';</code></td></tr>
+<tr><td>First N rows</td><td><code>LIMIT N</code></td><td><code>LIMIT N</code></td><td><code>LIMIT N</code></td><td><code>SELECT TOP N</code></td></tr>
+<tr><td>Now</td><td><code>datetime('now')</code></td><td><code>now()</code></td><td><code>NOW()</code></td><td><code>SYSUTCDATETIME()</code></td></tr>
+<tr><td>Days between</td><td><code>julianday(b)-julianday(a)</code></td><td><code>b::date - a::date</code></td><td><code>DATEDIFF(b,a)</code></td><td><code>DATEDIFF(day,a,b)</code></td></tr>
+<tr><td>Concatenate</td><td><code>a || b</code></td><td><code>a || b</code></td><td><code>CONCAT(a,b)</code></td><td><code>CONCAT(a,b)</code></td></tr>
+<tr><td>Case-insens. match</td><td><code>LIKE</code> (ASCII)</td><td><code>ILIKE</code></td><td><code>LIKE</code>*</td><td><code>LIKE</code>*</td></tr>
+<tr><td>Query plan</td><td><code>EXPLAIN QUERY PLAN</code></td><td><code>EXPLAIN ANALYZE</code>†</td><td><code>EXPLAIN</code></td><td>"Display Estimated Plan"</td></tr>
+</table>
+<p class="sub">* depends on the column collation (usually case-insensitive). † ANALYZE actually runs the query, so be careful with writes.</p>
+</section>
+
+<section>
+<h2>6 · Templates you'll reuse (identity / security)</h2>
+<pre>-- Latest sign-in per user
+WITH r AS (SELECT *, ROW_NUMBER() OVER
+  (PARTITION BY user_id ORDER BY ts DESC) rn FROM sign_ins)
+SELECT * FROM r WHERE rn = 1;
+
+-- Users with no sign-in at all (orphan / dormant)
+SELECT u.* FROM users u
+WHERE NOT EXISTS (SELECT 1 FROM sign_ins s WHERE s.user_id = u.id);
+
+-- Failures per IP in the last day; spray = many users
+SELECT ip, COUNT(*) fails, COUNT(DISTINCT user_id) users
+FROM sign_ins WHERE result='failure' AND ts >= :since
+GROUP BY ip HAVING COUNT(DISTINCT user_id) >= 10;
+
+-- Time since the previous event for the same user
+SELECT user_id, ts, country,
+  LAG(ts) OVER (PARTITION BY user_id ORDER BY ts) prev_ts
+FROM sign_ins;
+
+-- Expand nested groups
+WITH RECURSIVE m(id) AS (
+  SELECT member_id FROM group_members WHERE group_id = :g
+  UNION
+  SELECT gm.member_id FROM m JOIN group_members gm ON gm.group_id = m.id)
+SELECT * FROM m;
+
+-- Duplicate assignments
+SELECT app_id, principal_id, COUNT(*) FROM app_assignments
+GROUP BY app_id, principal_id HAVING COUNT(*) > 1;</pre>
+</section>
+
+<section>
+<h2>7 · Questions to ask the customer first</h2>
+<ul>
+<li>Which database and version? Read-only access or production?</li>
+<li>What's the <b>grain</b>: one row per what (per user? per event? per day)?</li>
+<li>Which time zone are timestamps stored in?</li>
+<li>What number do they <b>expect</b>, and what do they see? Get one concrete example id.</li>
+<li>Has anything changed recently (deploy, migration, sync job)?</li>
+</ul>
+</section>
+</div>
+</body>
+</html>
